@@ -1,0 +1,232 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "anthropic/claude-sonnet-4",
+          "mode": "list",
+          "cachedResultName": "anthropic/claude-sonnet-4"
+        },
+        "responsesApiEnabled": false,
+        "options": {
+          "temperature": 0,
+          "timeout": 60000,
+          "maxRetries": 3
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        800,
+        208
+      ],
+      "id": "669f9116-39d3-467e-9e38-ad021d031f66",
+      "name": "Модель Агента",
+      "credentials": {
+        "openAiApi": {
+          "id": "KyL8NLcsxZtShV8e",
+          "name": "OpenRouter_GPT"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        0
+      ],
+      "id": "70a3f4b8-798c-440a-a9e8-0c4d76bd10ea",
+      "name": "TG: Входящий файл",
+      "webhookId": "4a1f897f-619f-456c-af1d-b8ed590cc68c",
+      "credentials": {
+        "telegramApi": {
+          "id": "8RAYZ594qKNNmlIF",
+          "name": "KontentZavod"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "fileId": "={{ $json.message.document.file_id }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        208,
+        0
+      ],
+      "id": "262e6f30-f08f-4fa8-b7d8-24474c7ca8b0",
+      "name": "TG: Скачать файл",
+      "webhookId": "ab51698e-e4d4-4bf9-8d3f-fd1a9d4a6ce0",
+      "credentials": {
+        "telegramApi": {
+          "id": "8RAYZ594qKNNmlIF",
+          "name": "KontentZavod"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        416,
+        0
+      ],
+      "id": "576604be-d7af-4b5f-a897-a4740927560c",
+      "name": "XLSX: Парсинг отчета"
+    },
+    {
+      "parameters": {
+        "language": "pythonNative",
+        "pythonCode": "# 1. Получаем данные из предыдущей ноды (Новый стандарт n8n v2)\nrows = [item[\"json\"] for item in _items]\n\n# 2. Наша виртуальная база данных себестоимости (COGS)\ncogs_dict = {\n    'TS-BLK-M': 300,      # Футболка\n    'CASE-IPH15': 80,     # Чехол\n    'SOCK-BAMB': 50       # Носки\n}\n\n# 3. Группируем строки по артикулу (SKU) через встроенные словари Python\ngroups = {}\nfor row in rows:\n    sku = row.get('Артикул продавца')\n    if not sku:\n        continue\n    if sku not in groups:\n        groups[sku] = []\n    groups[sku].append(row)\n\nresults = []\n\n# 4. Пробегаемся по группам и считаем экономику\nfor sku, group in groups.items():\n    cogs = cogs_dict.get(sku, 0)\n    \n    sales_qty = 0\n    returns_qty = 0\n    net_qty = 0\n    gross_revenue = 0.0\n    net_payout = 0.0\n    total_logistics = 0.0\n    \n    for row in group:\n        operation = row.get('Обоснование для оплаты')\n        qty = int(row.get('Кол-во', 0))\n        revenue = float(row.get('Вайлдберриз реализовал Товар (Пр)', 0))\n        payout = float(row.get('К перечислению Продавцу за реализованный Товар', 0))\n        logistics = float(row.get('Услуги по доставке товара покупателю', 0))\n        \n        net_qty += qty\n        net_payout += payout\n        total_logistics += logistics\n        \n        if operation == 'Продажа':\n            sales_qty += qty\n            gross_revenue += revenue\n        elif operation == 'Возврат':\n            returns_qty += abs(qty)\n            \n    # Финальные расчеты\n    total_cogs = net_qty * cogs\n    net_profit = net_payout - total_logistics - total_cogs\n    margin_pct = (net_profit / gross_revenue) * 100 if gross_revenue > 0 else 0\n    \n    results.append({\n        'sku': sku,\n        'cogs_per_unit': cogs,\n        'sales_qty': sales_qty,\n        'returns_qty': returns_qty,\n        'net_qty': net_qty,\n        'gross_revenue': round(gross_revenue, 2),\n        'net_payout': round(net_payout, 2),\n        'total_logistics': round(total_logistics, 2),\n        'total_cogs': round(total_cogs, 2),\n        'net_profit': round(net_profit, 2),\n        'margin_pct': round(margin_pct, 2)\n    })\n\n# Возвращаем результат в формате n8n\nreturn [{'json': {'aggregated_report': results}}]"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        624,
+        0
+      ],
+      "id": "4af831b7-c1ae-486f-a1af-7c8ff6d64dd4",
+      "name": "PY: Агрегация данных"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=The Boss sent the weekly aggregated unit economics report:\n\n{{ JSON.stringify($json.aggregated_report, null, 2) }}\n\nConduct a financial audit. Provide a brutal breakdown and an action plan in Russian.",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "=You are an elite, cynical, and highly-paid Chief Financial Officer (CFO) for major e-commerce marketplace sellers (Wildberries/Ozon). Your job is to analyze the weekly aggregated financial report and provide the Boss with a brutal, dry, and highly profitable analysis.\n\nSpeak directly, with zero corporate politeness or fluff. Your goal is to save the seller's money and show exactly where they are losing budget and where they are making it.\n\nWhen analyzing the data, ALWAYS highlight:\n1. Unprofitable items (negative margin/profit). Explain the exact root cause (e.g., high logistics costs due to returns).\n2. Hidden gems (high margin, stable sales). Recommend scaling them immediately.\n3. Workhorses (generate revenue, but require cost monitoring).\n\nCRITICAL: You must write the final response in RUSSIAN, as the Boss only speaks Russian.\n\nFormat the response strictly for Telegram using HTML tags (DO NOT use Markdown):\n- Use <b>text</b> for bolding (NEVER use markdown asterisks like **).\n- Use <i>text</i> for italics (NEVER use markdown asterisks like *).\n- Use standard newlines for line breaks.\n- Use clear, professional emojis for visual structure (no childish spam).\n- Write in short, punchy paragraphs.\n- End with exactly 3 clear, step-by-step Action Items for the Boss."
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        864,
+        0
+      ],
+      "id": "6a5d3e44-f40a-4693-ad09-34d7f794a91b",
+      "name": "AI: Анализ экономики"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TG_CHAT_ID }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1232,
+        0
+      ],
+      "id": "c318c969-e844-4991-a692-0adacb568696",
+      "name": "TG: Отправить отчет",
+      "webhookId": "291e3986-ac58-43a7-9aae-bb1408f09ff2",
+      "credentials": {
+        "telegramApi": {
+          "id": "8RAYZ594qKNNmlIF",
+          "name": "KontentZavod"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Модель Агента": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI: Анализ экономики",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TG: Входящий файл": {
+      "main": [
+        [
+          {
+            "node": "TG: Скачать файл",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TG: Скачать файл": {
+      "main": [
+        [
+          {
+            "node": "XLSX: Парсинг отчета",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "XLSX: Парсинг отчета": {
+      "main": [
+        [
+          {
+            "node": "PY: Агрегация данных",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PY: Агрегация данных": {
+      "main": [
+        [
+          {
+            "node": "AI: Анализ экономики",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI: Анализ экономики": {
+      "main": [
+        [
+          {
+            "node": "TG: Отправить отчет",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TG: Отправить отчет": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "d9486adf704d58bcfc349eba7f3ab95a6a2084044e17f066604e75d575a47036"
+  }
+}
