@@ -27,6 +27,7 @@
   "net_profit": 5500.0,
   "margin_pct": 36.67
 }
+```
 🚀 Стек:
 Python 3.x (встроенные структуры данных dict, list)
 n8n Code Node (v2)
